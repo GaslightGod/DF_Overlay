@@ -32,7 +32,7 @@ settings_win = None
 
 session = requests.Session()
 session.headers.update({"User-Agent": "Mozilla/5.0"})
-GITHUB_VERSION_PUSH = "1.73"
+GITHUB_VERSION_PUSH = "1.78"
 CURRENT_VERSION = "1.73"
 
 # Fetch patch notes
@@ -1242,5 +1242,3 @@ if __name__ == "__main__":
     update_clock()
 
     tk.mainloop()
-
-    # push commit
