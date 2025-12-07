@@ -85,7 +85,7 @@ jobs:
           pip install pyinstaller
 
       - name: Build application
-        run: pyinstaller DF_Overlay.py --onefile --clean
+        run: pyinstaller DF_Overlay.py --onefile --clean --add-data "levels.txt;." --add-data "fine_hunger.png;." --add-data "hunger_icon.png;."
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
