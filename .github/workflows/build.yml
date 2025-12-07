@@ -21,16 +21,28 @@ jobs:
           $ver = $line.ToString().Split('"')[1]
           echo "version=$ver" >> $env:GITHUB_OUTPUT
 
-      - name: Bump version number
+      - name: Bump version number safely
         id: bump
         shell: pwsh
         run: |
           $old = "${{ steps.read_version.outputs.version }}"
+          
+          # Split version safely
           $parts = $old.Split(".")
           $major = $parts[0]
-          $minor = [int]$parts[1] + 1
+
+          # Ensure minor exists and is numeric
+          if ($parts.Length -lt 2 -or $parts[1] -eq "" -or $parts[1] -notmatch '^\d+$') {
+              $minor = 0
+          } else {
+              $minor = [int]$parts[1]
+          }
+
+          # Increment minor
+          $minor = $minor + 1
           $new = "$major.$minor"
 
+          # Replace the exact CURRENT_VERSION line
           (Get-Content DF_Overlay.py) -replace 'CURRENT_VERSION = ".*"', "CURRENT_VERSION = `"$new`"" | Set-Content DF_Overlay.py
 
           echo "newversion=$new" >> $env:GITHUB_OUTPUT
@@ -62,7 +74,7 @@ jobs:
           name: DF_Overlay_${{ steps.bump.outputs.newversion }}
           path: dist/DF_Overlay.exe
 
-      - name: Create GitHub Release
+      - name: Create Release
         id: create_release
         uses: actions/create-release@v1
         env:
