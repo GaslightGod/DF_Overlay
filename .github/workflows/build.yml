@@ -56,7 +56,7 @@ jobs:
         run: pyinstaller DF_Overlay.py --onefile --clean
 
       - name: Upload built exe
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: DF_Overlay_${{ steps.bump.outputs.newversion }}
           path: dist/DF_Overlay.exe
