@@ -1,0 +1,62 @@
+name: Build DF Overlay
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Read current version from DF_Overlay.py
+        id: read_version
+        shell: pwsh
+        run: |
+          $line = Select-String -Path "DF_Overlay.py" -Pattern 'CURRENT_VERSION'
+          $ver = $line.ToString().Split('"')[1]
+          echo "version=$ver" >> $env:GITHUB_OUTPUT
+
+      - name: Bump version number
+        id: bump
+        shell: pwsh
+        run: |
+          $old = "${{ steps.read_version.outputs.version }}"
+          $parts = $old.Split(".")
+          $major = $parts[0]
+          $minor = [int]$parts[1] + 1
+          $new = "$major.$minor"
+          (Get-Content DF_Overlay.py) -replace 'CURRENT_VERSION = ".*"', "CURRENT_VERSION = `"$new`"" | Set-Content DF_Overlay.py
+          echo "newversion=$new" >> $env:GITHUB_OUTPUT
+
+      - name: Commit updated version
+        shell: pwsh
+        run: |
+          git config user.name "auto builder"
+          git config user.email "actions@github.com"
+          git pull --rebase
+          git add DF_Overlay.py
+          git commit -m "Auto bump version to ${{ steps.bump.outputs.newversion }}"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git push
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pyinstaller
+
+      - name: Build application
+        run: pyinstaller DF_Overlay.py --onefile --clean
+
+      - name: Upload built exe
+        uses: actions/upload-artifact@v3
+        with:
+          name: DF_Overlay_${{ steps.bump.outputs.newversion }}
+          path: dist/DF_Overlay.exe
