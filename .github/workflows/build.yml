@@ -38,11 +38,11 @@ jobs:
         run: |
           git config user.name "auto builder"
           git config user.email "actions@github.com"
-          git pull --rebase
           git add DF_Overlay.py
           git commit -m "Auto bump version to ${{ steps.bump.outputs.newversion }}"
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           git push
+
 
       - name: Set up Python
         uses: actions/setup-python@v4
