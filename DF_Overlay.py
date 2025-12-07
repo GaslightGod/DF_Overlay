@@ -1217,7 +1217,4 @@ if __name__ == "__main__":
     update_clock()
 
     tk.mainloop()
-<<<<<<< HEAD
     
-=======
->>>>>>> ab0b2945065a3d84d45bb4733c5b1ceda30d0571
