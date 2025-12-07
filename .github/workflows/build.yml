@@ -30,7 +30,9 @@ jobs:
           $major = $parts[0]
           $minor = [int]$parts[1] + 1
           $new = "$major.$minor"
+
           (Get-Content DF_Overlay.py) -replace 'CURRENT_VERSION = ".*"', "CURRENT_VERSION = `"$new`"" | Set-Content DF_Overlay.py
+
           echo "newversion=$new" >> $env:GITHUB_OUTPUT
 
       - name: Commit updated version
@@ -43,7 +45,6 @@ jobs:
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           git push
 
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -55,8 +56,30 @@ jobs:
       - name: Build application
         run: pyinstaller DF_Overlay.py --onefile --clean
 
-      - name: Upload built exe
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: DF_Overlay_${{ steps.bump.outputs.newversion }}
           path: dist/DF_Overlay.exe
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.bump.outputs.newversion }}
+          release_name: DF Overlay v${{ steps.bump.outputs.newversion }}
+          body: "Auto built release for version ${{ steps.bump.outputs.newversion }}"
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: dist/DF_Overlay.exe
+          asset_name: DF_Overlay_${{ steps.bump.outputs.newversion }}.exe
+          asset_content_type: application/octet-stream
