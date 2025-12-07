@@ -42,8 +42,15 @@ jobs:
           $minor = $minor + 1
           $new = "$major.$minor"
 
-          # Replace the exact CURRENT_VERSION line
-          (Get-Content DF_Overlay.py) -replace 'CURRENT_VERSION = ".*"', "CURRENT_VERSION = `"$new`"" | Set-Content DF_Overlay.py
+          # Safely rewrite CURRENT_VERSION line
+          (Get-Content DF_Overlay.py) |
+              ForEach-Object {
+                  if ($_ -match '^CURRENT_VERSION') {
+                      'CURRENT_VERSION = "' + $new + '"'
+                  } else {
+                      $_
+                  }
+              } | Set-Content DF_Overlay.py
 
           echo "newversion=$new" >> $env:GITHUB_OUTPUT
 
@@ -74,7 +81,7 @@ jobs:
           name: DF_Overlay_${{ steps.bump.outputs.newversion }}
           path: dist/DF_Overlay.exe
 
-      - name: Create Release
+      - name: Create GitHub Release
         id: create_release
         uses: actions/create-release@v1
         env:
