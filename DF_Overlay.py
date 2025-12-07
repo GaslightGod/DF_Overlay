@@ -20,6 +20,14 @@ import keyboard
 import json
 import subprocess
 
+
+def ui_update(func):
+    try:
+        overlay.after(0, func)
+    except:
+        pass
+
+
 settings_win = None
 
 session = requests.Session()
@@ -146,6 +154,10 @@ GOAL_SECONDS = 0
 
 debug_win = None
 debug_text = None
+
+
+
+
 
 # Helper for resolving resources in exe mode
 def resource_path(filename):
@@ -283,9 +295,9 @@ def update_icon_scale():
     hunger_icon = ImageTk.PhotoImage(img)
     icon_canvas.image = hunger_icon
 
-    icon_canvas.config(width=size, height=size)
-    icon_canvas.itemconfig(icon_item, image=hunger_icon)
-    icon_canvas.coords(icon_item, size // 2, size // 2)
+    ui_update(lambda: icon_canvas.config(width=size, height=size))
+    ui_update(lambda: icon_canvas.itemconfig(icon_item, image=hunger_icon))
+    ui_update(lambda: icon_canvas.coords(icon_item, size // 2, size // 2))
 
 # Small debug window for live logs
 def open_debug():
@@ -588,9 +600,10 @@ def open_settings():
 
 
         if SHOW_NEXT:
-            label_next.config(text=f"Next LV: {format_eta(NEXT_SECONDS / 3600)}")
+            ui_update(lambda: label_next.config(text=f"Next LV: {format_eta(NEXT_SECONDS / 3600)}"))
+
         if SHOW_GOAL:
-            label_goal.config(text=f"Goal {GOAL_LEVEL}: {format_eta(GOAL_SECONDS / 3600)}")
+            ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: {format_eta(GOAL_SECONDS / 3600)}"))
 
         apply_settings()
         save_settings()
@@ -653,9 +666,10 @@ def countdown_tick():
             GOAL_SECONDS -= 1
 
         if SHOW_NEXT:
-            label_next.config(text=f"Next LV: {format_eta(NEXT_SECONDS / 3600)}")
+            ui_update(lambda: label_next.config(text=f"Next LV: {format_eta(NEXT_SECONDS / 3600)}"))
+
         if SHOW_GOAL:
-            label_goal.config(text=f"Goal {GOAL_LEVEL}: {format_eta(GOAL_SECONDS / 3600)}")
+            ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: {format_eta(GOAL_SECONDS / 3600)}"))
 
         time.sleep(1)
 
@@ -673,8 +687,9 @@ async def exp_loop():
     last_exp = EXP_INSIDE
     last_change_time = time.time()
 
-    label_exp.config(text="EXP/hr: WAITING")
-    label_avg.config(text="AVG: WAITING")
+    ui_update(lambda: label_exp.config(text="EXP/hr: WAITING"))
+
+    ui_update(lambda: label_avg.config(text="AVG: WAITING"))
 
     # Starts here - main loop
     while running:
@@ -689,16 +704,18 @@ async def exp_loop():
             last_exp = EXP_INSIDE
             last_change_time = time.time()
 
-            label_exp.config(text="EXP/hr: WAITING")
-            label_avg.config(text="AVG: WAITING")
+            ui_update(lambda: label_exp.config(text="EXP/hr: WAITING"))
+            ui_update(lambda: label_avg.config(text="AVG: WAITING"))
 
             NEXT_SECONDS = 0
             GOAL_SECONDS = 0
 
             if SHOW_NEXT:
-                label_next.config(text="Next LV: --:--:--")
+                ui_update(lambda: label_next.config(text="Next LV: --:--:--"))
+
             if SHOW_GOAL:
-                label_goal.config(text=f"Goal {GOAL_LEVEL}: --:--:--")
+                ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: --:--:--"))
+
 
             debug_log("[Window lost - EXP reset]")
             await asyncio.sleep(1)
@@ -734,15 +751,15 @@ async def exp_loop():
             last_change_time = now
             last_exp = inside
 
-            label_exp.config(text="EXP/hr: WAITING")
-            label_avg.config(text="AVG: WAITING")
+            ui_update(lambda: label_exp.config(text="EXP/hr: WAITING"))
+            ui_update(lambda: label_avg.config(text="AVG: WAITING"))
             NEXT_SECONDS = 0
             GOAL_SECONDS = 0
 
             if SHOW_NEXT:
-                label_next.config(text="Next LV: --:--:--")
+                ui_update(lambda: label_next.config(text="Next LV: --:--:--"))
             if SHOW_GOAL:
-                label_goal.config(text=f"Goal {GOAL_LEVEL}: --:--:--")
+                ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: --:--:--"))
 
             debug_log("[EXP RESET triggered]")
             await asyncio.sleep(1)
@@ -753,14 +770,14 @@ async def exp_loop():
             if now - last_change_time > 90:
                 exp_window.clear()
                 exp_history.clear()
-                label_exp.config(text="EXP/hr: WAITING")
-                label_avg.config(text="AVG: WAITING")
+                ui_update(lambda: label_exp.config(text="EXP/hr: WAITING"))
+                ui_update(lambda: label_avg.config(text="AVG: WAITING"))
                 NEXT_SECONDS = 0
                 GOAL_SECONDS = 0
                 if SHOW_NEXT:
-                    label_next.config(text="Next LV: --:--:--")
+                    ui_update(lambda: label_next.config(text="Next LV: --:--:--"))
                 if SHOW_GOAL:
-                    label_goal.config(text=f"Goal {GOAL_LEVEL}: --:--:--")
+                    ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: --:--:--"))
                 debug_log("[Idle reset - no EXP gain]")
                 last_change_time = now
             await asyncio.sleep(1)
@@ -772,6 +789,9 @@ async def exp_loop():
         raw_rate = (gain / dt) * 3600
 
         exp_history.append(raw_rate)
+        if len(exp_history) > 300:
+            exp_history.pop(0)
+
         EXP_INSIDE = inside
         REAL_EXP = LEVELS[REAL_LEVEL] + inside
 
@@ -785,13 +805,16 @@ async def exp_loop():
             final_rate = statistics.mean(exp_window)
 
         if SHOW_EXP:
-            label_exp.config(text=f"EXP/hr: {int(final_rate):,}")
+            ui_update(lambda: label_exp.config(text=f"EXP/hr: {int(final_rate):,}"))
+
 
         if SHOW_AVG:
             try:
-                label_avg.config(text=f"AVG: {int(statistics.mean(exp_history)):,}")
+                ui_update(lambda: label_avg.config(text=f"AVG: {int(statistics.mean(exp_history)):,}"))
+
             except:
-                label_avg.config(text="AVG: WAITING")
+                ui_update(lambda: label_avg.config(text="AVG: WAITING"))
+
 
 
         # Next level ETA logic
@@ -831,9 +854,11 @@ async def exp_loop():
             GOAL_SECONDS = 0
 
         if SHOW_NEXT:
-            label_next.config(text=f"Next LV: {format_eta(NEXT_SECONDS / 3600)}")
+            ui_update(lambda: label_next.config(text=f"Next LV: {format_eta(NEXT_SECONDS / 3600)}"))
+
         if SHOW_GOAL:
-            label_goal.config(text=f"Goal {GOAL_LEVEL}: {format_eta(GOAL_SECONDS / 3600)}")
+            ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: {format_eta(GOAL_SECONDS / 3600)}"))
+
 
         last_change_time = now
         last_exp = inside
@@ -849,19 +874,19 @@ def blink_hunger_icon():
     # Only blink when hunger is FINE - otherwise hide it
     if current_hunger_state == "FINE":
         if blink_state:
-            icon_canvas.itemconfig(icon_item, state="normal")
+            ui_update(lambda: icon_canvas.itemconfig(icon_item, state="normal"))
         else:
-            icon_canvas.itemconfig(icon_item, state="hidden")
+            ui_update(lambda: icon_canvas.itemconfig(icon_item, state="hidden"))
         blink_state = not blink_state
     else:
-        icon_canvas.itemconfig(icon_item, state="hidden")
+        ui_update(lambda: icon_canvas.itemconfig(icon_item, state="hidden"))
 
     overlay.after(500, blink_hunger_icon)
 
 # Clock updater - Todo: let user pick 24h maybe?
 def update_clock():
     if SHOW_CLOCK:
-        label_clock.config(text=time.strftime("%I:%M:%S %p"))
+        ui_update(lambda: label_clock.config(text=time.strftime("%I:%M:%S %p")))
     overlay.after(1000, update_clock)
 
 # Watches version.json every ~30s
@@ -874,7 +899,7 @@ def version_watchdog():
                     text=f"New update available (v{latest}) - Press F5 to update"
                 )
             else:
-                label_update_notice.config(text="")
+                ui_update(lambda: label_update_notice.config(text=""))
         except:
             pass
         time.sleep(30)
