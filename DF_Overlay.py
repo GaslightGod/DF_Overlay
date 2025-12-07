@@ -25,7 +25,7 @@ settings_win = None
 session = requests.Session()
 session.headers.update({"User-Agent": "Mozilla/5.0"})
 
-CURRENT_VERSION = ".1"
+CURRENT_VERSION = "1.73"
 
 # Fetch patch notes
 def fetch_patch_notes():
@@ -1218,4 +1218,3 @@ if __name__ == "__main__":
 
     tk.mainloop()
 
-    

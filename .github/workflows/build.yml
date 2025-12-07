@@ -29,9 +29,13 @@ jobs:
           
           # Split version safely
           $parts = $old.Split(".")
-          $major = $parts[0]
+          if ($parts[0] -eq "" -or $parts[0] -notmatch '^\d+$') {
+              $major = 1
+          } else {
+              $major = [int]$parts[0]
+          }
 
-          # Ensure minor exists and is numeric
+          # validate minor
           if ($parts.Length -lt 2 -or $parts[1] -eq "" -or $parts[1] -notmatch '^\d+$') {
               $minor = 0
           } else {
