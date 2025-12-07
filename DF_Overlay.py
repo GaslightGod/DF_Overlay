@@ -7,16 +7,16 @@ from tkinter import messagebox
 from tkinter import colorchooser, ttk
 import time
 import statistics
-import requests
-import win32gui
-import win32ui
-import win32con
-import numpy as np
-import cv2
-from PIL import Image, ImageTk
-from bs4 import BeautifulSoup
+import requests #type: ignore
+import win32gui #type: ignore
+import win32ui #type: ignore
+import win32con #type: ignore
+import numpy as np #type: ignore
+import cv2 #type: ignore
+from PIL import Image, ImageTk #type: ignore
+from bs4 import BeautifulSoup #type: ignore
 import ctypes
-import keyboard
+import keyboard #type: ignore
 import json
 import subprocess
 
