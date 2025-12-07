@@ -17,7 +17,7 @@ jobs:
         id: read_version
         shell: pwsh
         run: |
-          $line = Select-String -Path "DF_Overlay.py" -Pattern 'CURRENT_VERSION'
+          $line = Select-String -Path "DF_Overlay.py" -Pattern 'GITHUB_VERSION_PUSH'
           $ver = $line.ToString().Split('"')[1]
           echo "version=$ver" >> $env:GITHUB_OUTPUT
 
@@ -49,8 +49,8 @@ jobs:
           # Safely rewrite CURRENT_VERSION line
           (Get-Content DF_Overlay.py) |
               ForEach-Object {
-                  if ($_ -match '^CURRENT_VERSION') {
-                      'CURRENT_VERSION = "' + $new + '"'
+                  if ($_ -match '^GITHUB_VERSION_PUSH') {
+                      'GITHUB_VERSION_PUSH = "' + $new + '"'
                   } else {
                       $_
                   }
