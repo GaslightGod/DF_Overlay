@@ -1,0 +1,16 @@
+{
+    "TEXT_COLOR": "#17d3dd",
+    "SCALE": 0.9,
+    "GOAL_LEVEL": 415,
+    "FONT_FAMILY": "Consolas",
+    "LOCK_POSITION": false,
+    "SHOW_EXP": true,
+    "SHOW_AVG": true,
+    "SHOW_NEXT": true,
+    "SHOW_GOAL": true,
+    "SHOW_CLOCK": true,
+    "EXP_MODE": "AVG5",
+    "ICON_SCALE": 1.0,
+    "OVERLAY_X": 65,
+    "OVERLAY_Y": 502
+}

@@ -19,6 +19,11 @@ import ctypes
 import keyboard #type: ignore
 import json
 import subprocess
+from threading import Lock
+
+exp_lock = Lock()          # For EXP, exp_history, exp_window, ETA calculations
+settings_lock = Lock()     # For settings changes from UI
+hunger_lock = Lock()       # For hunger_state changes
 
 
 def ui_update(func):
@@ -133,7 +138,7 @@ exp_history = []
 exp_window = []
 
 # UI toggles
-EXP_MODE = "RAW"
+EXP_MODE = "AVG5"
 TEXT_COLOR = "#0BF0F0"
 SCALE = 1.0
 LOCK_POSITION = False
@@ -152,11 +157,12 @@ GOAL_LEVEL = 415
 NEXT_SECONDS = 0
 GOAL_SECONDS = 0
 
+AVG_HISTORY_LIMIT = 20         
+MIN_VALID_RATE = 1e-6 
+
+
 debug_win = None
 debug_text = None
-
-
-
 
 
 # Helper for resolving resources in exe mode
@@ -264,6 +270,10 @@ def load_settings():
     global TEXT_COLOR, SCALE, GOAL_LEVEL, FONT_FAMILY
     global LOCK_POSITION, SHOW_EXP, SHOW_AVG, SHOW_NEXT
     global SHOW_GOAL, SHOW_CLOCK, EXP_MODE, ICON_SCALE
+    global OVERLAY_X, OVERLAY_Y
+
+
+
 
     if not os.path.exists(SETTINGS_FILE):
         return
@@ -282,6 +292,8 @@ def load_settings():
     SHOW_CLOCK = data.get("SHOW_CLOCK", True)
     EXP_MODE = data.get("EXP_MODE", EXP_MODE)
     ICON_SCALE = data.get("ICON_SCALE", ICON_SCALE)
+    OVERLAY_X = data.get("OVERLAY_X", None)
+    OVERLAY_Y = data.get("OVERLAY_Y", None)
 
     # Update hunger icon scale - TODO: maybe move to its own small module someday
 def update_icon_scale():
@@ -345,6 +357,34 @@ def debug_log(msg):
         ))
     except:
         pass
+
+
+def switch_pid(new_pid):
+    global PID, REAL_LEVEL, EXP_INSIDE, REAL_EXP, exp_history, exp_window, last_exp, last_change_time
+
+    PID = new_pid.strip()
+    save_pid(PID)
+
+    init = fetch_profile(PID, fetch_level=True)
+    if not init:
+        messagebox.showerror("PID Error", "Failed to load profile for this PID.")
+        return
+
+    REAL_LEVEL, EXP_INSIDE = init
+    REAL_EXP = LEVELS[REAL_LEVEL] + EXP_INSIDE
+    with exp_lock:
+        exp_history.clear()
+        exp_window.clear()
+    last_exp = EXP_INSIDE
+    last_change_time = time.time()
+
+    ui_update(lambda: label_exp.config(text="EXP/hr: WAITING"))
+    ui_update(lambda: label_avg.config(text="AVG: WAITING"))
+    ui_update(lambda: label_next.config(text="Next LV: --:--:--"))
+    ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: --:--:--"))
+
+    messagebox.showinfo("PID Updated", f"Tracking switched to PID {PID}")
+
 
 # Settings window - pretty huge but works for now
 def open_settings():
@@ -549,64 +589,71 @@ def open_settings():
         global LOCK_POSITION, SHOW_EXP, SHOW_AVG, SHOW_NEXT
         global SHOW_GOAL, EXP_MODE, SHOW_CLOCK, ICON_SCALE
 
-        TEXT_COLOR = ce.get()
+        with settings_lock:
 
-        try:
-            SCALE = float(se.get())
-        except:
-            pass
+            TEXT_COLOR = ce.get()
 
-        try:
-            ICON_SCALE = float(icon_entry.get())
-        except:
-            ICON_SCALE = 1.0
-
-        LOCK_POSITION = lock.get()
-        CLICK_THROUGH = LOCK_POSITION
-        apply_click_through()
-
-        SHOW_EXP = v1.get()
-        SHOW_AVG = v2.get()
-        SHOW_NEXT = v3.get()
-        SHOW_GOAL = v4.get()
-        SHOW_CLOCK = v6.get()
-        FONT_FAMILY = fb.get()
-        EXP_MODE = cmb.get()
-
-        try:
-            new_gl = int(ge.get())
-            if new_gl in LEVELS:
-                GOAL_LEVEL = new_gl
-        except:
-            pass
-
-        if exp_history:
-            global REAL_EXP, GOAL_SECONDS
-            REAL_EXP = LEVELS[REAL_LEVEL] + EXP_INSIDE
-            xp_goal_total = LEVELS.get(GOAL_LEVEL, REAL_EXP)
-            xp_remaining = xp_goal_total - REAL_EXP
-
-            if xp_remaining < 0:
-                xp_remaining = 0
             try:
-                avg_rate = statistics.mean(exp_history)
-            except statistics.StatisticsError:
-                avg_rate = 0
+                SCALE = float(se.get())
+            except:
+                pass
 
-            if avg_rate > 0:
-                GOAL_SECONDS = int((xp_remaining / avg_rate) * 3600)
-            else:
-                GOAL_SECONDS = 0
+            try:
+                ICON_SCALE = float(icon_entry.get())
+            except:
+                ICON_SCALE = 1.0
+
+            LOCK_POSITION = lock.get()
+            CLICK_THROUGH = LOCK_POSITION
+            apply_click_through()
+
+            SHOW_EXP = v1.get()
+            SHOW_AVG = v2.get()
+            SHOW_NEXT = v3.get()
+            SHOW_GOAL = v4.get()
+            SHOW_CLOCK = v6.get()
+            FONT_FAMILY = fb.get()
+            EXP_MODE = cmb.get()
+
+            try:
+                new_gl = int(ge.get())
+                if new_gl in LEVELS:
+                    GOAL_LEVEL = new_gl
+            except:
+                pass
+
+            if exp_history:
+                global REAL_EXP, GOAL_SECONDS
+                REAL_EXP = LEVELS[REAL_LEVEL] + EXP_INSIDE
+                xp_goal_total = LEVELS.get(GOAL_LEVEL, REAL_EXP)
+                xp_remaining = xp_goal_total - REAL_EXP
+
+                if xp_remaining < 0:
+                    xp_remaining = 0
+                try:
+                    avg_rate = statistics.mean(exp_history)
+                except statistics.StatisticsError:
+                    avg_rate = 0
+
+                if avg_rate > 0:
+                    GOAL_SECONDS = int((xp_remaining / avg_rate) * 3600)
+                else:
+                    GOAL_SECONDS = 0
 
 
-        if SHOW_NEXT:
-            ui_update(lambda: label_next.config(text=f"Next LV: {format_eta(NEXT_SECONDS / 3600)}"))
+            if SHOW_NEXT:
+                ui_update(lambda: label_next.config(text=f"Next LV: {format_eta(NEXT_SECONDS / 3600)}"))
 
-        if SHOW_GOAL:
-            ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: {format_eta(GOAL_SECONDS / 3600)}"))
+            if SHOW_GOAL:
+                ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: {format_eta(GOAL_SECONDS / 3600)}"))
 
-        apply_settings()
-        save_settings()
+            # Switch PID if changed
+            new_pid_value = pid_entry.get().strip()
+            if new_pid_value and new_pid_value != PID:
+                switch_pid(new_pid_value)
+
+            apply_settings()
+            save_settings()
 
     tk.Button(w, text="Apply", fg="black", bg=TEXT_COLOR, command=sv).pack(pady=10)
 
@@ -623,6 +670,19 @@ def open_settings():
 
     close_btn.config(command=on_close)
     w.protocol("WM_DELETE_WINDOW", on_close)
+
+
+
+    tk.Label(g, text="Switch PID:", fg=TEXT_COLOR,
+            bg="black", font=("Consolas", 12, "bold")).pack(pady=(10, 3))
+
+    pid_entry = tk.Entry(
+        g, bg="black", fg=TEXT_COLOR,
+        insertbackground=TEXT_COLOR, justify="center"
+    )
+    pid_entry.insert(0, PID)
+    pid_entry.pack(pady=(0, 10))
+
 
 # Update logic - only runs if update is available
 def run_updater():
@@ -660,20 +720,17 @@ def format_eta(h):
 def countdown_tick():
     global NEXT_SECONDS, GOAL_SECONDS
     while running:
-        if NEXT_SECONDS > 0:
-            NEXT_SECONDS -= 1
-        if GOAL_SECONDS > 0:
-            GOAL_SECONDS -= 1
+        with exp_lock:
+            if NEXT_SECONDS > 1:
+                NEXT_SECONDS -= 1
+            if GOAL_SECONDS > 1:
+                GOAL_SECONDS -= 1
 
-        if SHOW_NEXT:
-            ui_update(lambda: label_next.config(text=f"Next LV: {format_eta(NEXT_SECONDS / 3600)}"))
-
-        if SHOW_GOAL:
-            ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: {format_eta(GOAL_SECONDS / 3600)}"))
+        ui_update(lambda: label_next.config(text=f"Next LV: {format_eta(NEXT_SECONDS / 3600)}"))
+        ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: {format_eta(GOAL_SECONDS / 3600)}"))
 
         time.sleep(1)
 
-# Main EXP processing loop - core logic for EXP/hr
 async def exp_loop():
     global last_exp, last_change_time, REAL_LEVEL, EXP_INSIDE, REAL_EXP
     global NEXT_SECONDS, GOAL_SECONDS, exp_window, exp_history
@@ -688,19 +745,18 @@ async def exp_loop():
     last_change_time = time.time()
 
     ui_update(lambda: label_exp.config(text="EXP/hr: WAITING"))
-
     ui_update(lambda: label_avg.config(text="AVG: WAITING"))
 
-    # Starts here - main loop
     while running:
         now = time.time()
         inside = fetch_profile(PID, fetch_level=False)
 
-        # If DF window is gone or profile unreadable we reset averages completely - this should fix the issue of stale data causing huge EXP/hr spikes
+        # WINDOW LOST / BAD DATA RESET
         hwnd = win32gui.FindWindow(None, "Dead Frontier")
         if hwnd == 0 or inside is None:
-            exp_window.clear()
-            exp_history.clear()
+            with exp_lock:
+                exp_window.clear()
+                exp_history.clear()
             last_exp = EXP_INSIDE
             last_change_time = time.time()
 
@@ -709,161 +765,135 @@ async def exp_loop():
 
             NEXT_SECONDS = 0
             GOAL_SECONDS = 0
+            ui_update(lambda: label_next.config(text="Next LV: --:--:--"))
+            ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: --:--:--"))
 
-            if SHOW_NEXT:
+            await asyncio.sleep(1)
+            continue
+
+        # NO CHANGE IN EXP FOR TOO LONG (IDLE)
+        if inside == last_exp:
+            if now - last_change_time > 90:
+                with exp_lock:
+                    exp_window.clear()
+                    exp_history.clear()
+                ui_update(lambda: label_exp.config(text="EXP/hr: WAITING"))
+                ui_update(lambda: label_avg.config(text="AVG: WAITING"))
+                NEXT_SECONDS = 0
+                GOAL_SECONDS = 0
                 ui_update(lambda: label_next.config(text="Next LV: --:--:--"))
-
-            if SHOW_GOAL:
                 ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: --:--:--"))
-
-
-            debug_log("[Window lost - EXP reset]")
+                last_change_time = now
             await asyncio.sleep(1)
             continue
 
-        
-        if inside is None:
-            await asyncio.sleep(1)
-            continue
-
-        now = time.time()
-
-        # If EXP drops, user died or leveled - recalc everything
+        # EXP DECREASE MEANS LEVEL UP OR DEATH → FULL RESET
         if inside < last_exp:
-            # Player leveled up (EXP rolled back to inside XP)
-            
-            # Fetch updated level
             lvl_info = fetch_profile(PID, fetch_level=True)
-            if lvl_info is not None:
-                lvl, inside_value = lvl_info
+            if lvl_info:
+                lvl, inside_val = lvl_info
                 REAL_LEVEL = lvl
-                EXP_INSIDE = inside_value
-                REAL_EXP = LEVELS[REAL_LEVEL] + EXP_INSIDE
+                EXP_INSIDE = inside_val
+                REAL_EXP = LEVELS[REAL_LEVEL] + inside_val
             else:
-                # Fallback to inside if level fetch failed
                 EXP_INSIDE = inside
                 REAL_EXP = LEVELS[REAL_LEVEL] + inside
-
-            # Reset exp_window and history to prevent incorrect averages
-            exp_window.clear()
-            exp_history.clear()
-
+            with exp_lock:
+                exp_window.clear()
+                exp_history.clear()
             last_change_time = now
             last_exp = inside
 
             ui_update(lambda: label_exp.config(text="EXP/hr: WAITING"))
             ui_update(lambda: label_avg.config(text="AVG: WAITING"))
+
             NEXT_SECONDS = 0
             GOAL_SECONDS = 0
+            ui_update(lambda: label_next.config(text="Next LV: --:--:--"))
+            ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: --:--:--"))
 
-            if SHOW_NEXT:
-                ui_update(lambda: label_next.config(text="Next LV: --:--:--"))
-            if SHOW_GOAL:
-                ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: --:--:--"))
-
-            debug_log("[EXP RESET triggered]")
             await asyncio.sleep(1)
             continue
 
-        # No EXP change for a while - consider idle
-        if inside == last_exp:
-            if now - last_change_time > 90:
-                exp_window.clear()
-                exp_history.clear()
-                ui_update(lambda: label_exp.config(text="EXP/hr: WAITING"))
-                ui_update(lambda: label_avg.config(text="AVG: WAITING"))
-                NEXT_SECONDS = 0
-                GOAL_SECONDS = 0
-                if SHOW_NEXT:
-                    ui_update(lambda: label_next.config(text="Next LV: --:--:--"))
-                if SHOW_GOAL:
-                    ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: --:--:--"))
-                debug_log("[Idle reset - no EXP gain]")
-                last_change_time = now
-            await asyncio.sleep(1)
-            continue
-
-        # EXP changed - recalc rate
+        # NORMAL EXP GAIN
         gain = inside - last_exp
         dt = now - last_change_time
+
+        # Prevent divide-by-zero pathological conditions
+        if dt <= 0:
+            await asyncio.sleep(1)
+            continue
+
         raw_rate = (gain / dt) * 3600
 
-        exp_history.append(raw_rate)
-        if len(exp_history) > 300:
-            exp_history.pop(0)
+        # CLEAN RAW RATE (prevent nan, inf, microscopic values)
+        if not np.isfinite(raw_rate) or raw_rate <= MIN_VALID_RATE:
+            raw_rate = MIN_VALID_RATE
+
+        # Update exp history (bounded at AVG_HISTORY_LIMIT)
+        with exp_lock:
+            exp_history.append(raw_rate)
+            if len(exp_history) > AVG_HISTORY_LIMIT:
+                exp_history.pop(0)
 
         EXP_INSIDE = inside
         REAL_EXP = LEVELS[REAL_LEVEL] + inside
 
+        # MODE: RAW / AVG3 / AVG5
         if EXP_MODE == "RAW":
             final_rate = raw_rate
             exp_window = [raw_rate]
         else:
-            exp_window.append(raw_rate)
-            window_len = 3 if EXP_MODE == "AVG3" else 5
-            exp_window = exp_window[-window_len:]
-            final_rate = statistics.mean(exp_window)
+            with exp_lock:
+                exp_window.append(raw_rate)
+                window_len = 3 if EXP_MODE == "AVG3" else 5
+                exp_window = exp_window[-window_len:]
+                final_rate = statistics.mean(exp_window)
 
-        if SHOW_EXP:
-            ui_update(lambda: label_exp.config(text=f"EXP/hr: {int(final_rate):,}"))
+        # UPDATE UI EXP RATE
+        ui_update(lambda: label_exp.config(text=f"EXP/hr: {int(final_rate):,}"))
 
+        # UPDATE UI AVG
+        try:
+            avg_full = statistics.mean(exp_history)
+            ui_update(lambda: label_avg.config(text=f"AVG: {int(avg_full):,}"))
+        except:
+            avg_full = 0
+            ui_update(lambda: label_avg.config(text="AVG: WAITING"))
 
-        if SHOW_AVG:
-            try:
-                ui_update(lambda: label_avg.config(text=f"AVG: {int(statistics.mean(exp_history)):,}"))
-
-            except:
-                ui_update(lambda: label_avg.config(text="AVG: WAITING"))
-
-
-
-        # Next level ETA logic
-        # Check for overflow and determine actual current level
+        # DETECT LEVEL UPS FROM SPILLOVER
         xp_total = LEVELS[REAL_LEVEL] + EXP_INSIDE
         while REAL_LEVEL < MAX_LEVEL and xp_total >= LEVELS[REAL_LEVEL + 1]:
             REAL_LEVEL += 1
         EXP_INSIDE = xp_total - LEVELS[REAL_LEVEL]
         REAL_EXP = xp_total
 
-        # Using AVG exp rate for ETAs
-        try:
-            avg_rate = statistics.mean(exp_history) if exp_history else 0
-        except statistics.StatisticsError:
-            avg_rate = 0
+        # ETA CALCULATION; FULLY PROTECTED FROM ZERO OR NAN
+        avg_rate = avg_full if avg_full and avg_full > MIN_VALID_RATE else MIN_VALID_RATE
 
-        # Calculation for next level
-        if REAL_LEVEL < MAX_LEVEL and avg_rate > 0:
-            xp_next_level = LEVELS[REAL_LEVEL + 1]
-            xp_needed = xp_next_level - xp_total
-
-            if xp_needed < 0:
-                xp_needed = 0
-            NEXT_SECONDS = int((xp_needed / avg_rate) * 3600)
+        # NEXT LEVEL ETA
+        if REAL_LEVEL < MAX_LEVEL:
+            xp_next = LEVELS[REAL_LEVEL + 1]
+            xp_needed = max(xp_next - xp_total, 0)
+            seconds = int((xp_needed / avg_rate) * 3600)
+            with exp_lock:
+                NEXT_SECONDS = max(seconds, 1)
         else:
-            NEXT_SECONDS = 0
+            with exp_lock:
+                NEXT_SECONDS = 0
 
-        # ETA for goal level
+        # GOAL LEVEL ETA
         xp_goal_total = LEVELS.get(GOAL_LEVEL, xp_total)
-        xp_remaining = xp_goal_total - xp_total
-        if xp_remaining < 0:
-            xp_remaining = 0
+        xp_remaining = max(xp_goal_total - xp_total, 0)
+        seconds = int((xp_remaining / avg_rate) * 3600)
+        with exp_lock:
+            GOAL_SECONDS = max(seconds, 1)
 
-        if avg_rate > 0:
-            GOAL_SECONDS = int((xp_remaining / avg_rate) * 3600)
-        else:
-            GOAL_SECONDS = 0
+        ui_update(lambda: label_next.config(text=f"Next LV: {format_eta(NEXT_SECONDS / 3600)}"))
+        ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: {format_eta(GOAL_SECONDS / 3600)}"))
 
-        if SHOW_NEXT:
-            ui_update(lambda: label_next.config(text=f"Next LV: {format_eta(NEXT_SECONDS / 3600)}"))
-
-        if SHOW_GOAL:
-            ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: {format_eta(GOAL_SECONDS / 3600)}"))
-
-
-        last_change_time = now
         last_exp = inside
-
-        debug_log(f"[EXP] +{gain:,} in {dt:.2f}s → {int(raw_rate):,}/hr")
+        last_change_time = now
 
         await asyncio.sleep(1)
 
@@ -871,8 +901,12 @@ async def exp_loop():
 def blink_hunger_icon():
     global blink_state, current_hunger_state
 
+    # Copy hunger state safely
+    with hunger_lock:
+        state = current_hunger_state
+
     # Only blink when hunger is FINE - otherwise hide it
-    if current_hunger_state == "FINE":
+    if state == "FINE":
         if blink_state:
             ui_update(lambda: icon_canvas.itemconfig(icon_item, state="normal"))
         else:
@@ -882,6 +916,7 @@ def blink_hunger_icon():
         ui_update(lambda: icon_canvas.itemconfig(icon_item, state="hidden"))
 
     overlay.after(500, blink_hunger_icon)
+
 
 # Clock updater - Todo: let user pick 24h maybe?
 def update_clock():
@@ -986,8 +1021,8 @@ def hunger_loop():
                             sample_x:sample_x + sample_w]
 
         avg = sample_crop.mean(axis=(0, 1))
-        current_hunger_state = classify_color(avg)
-
+        with hunger_lock:
+            current_hunger_state = classify_color(avg)
         time.sleep(0.05)
 
 # PID input
@@ -1146,6 +1181,15 @@ if __name__ == "__main__":
     overlay.config(bg="black")
     overlay.overrideredirect(True)
 
+
+    try:
+        if OVERLAY_X is not None and OVERLAY_Y is not None:
+            overlay.geometry(f"+{OVERLAY_X}+{OVERLAY_Y}")
+    except:
+        pass
+
+
+
     hunger_img_original = Image.open(resource_path("hunger_icon.png"))
     TEMPLATE = cv2.imread(resource_path("fine_hunger.png"), cv2.IMREAD_COLOR)
     template_h, template_w = TEMPLATE.shape[:2]
@@ -1207,6 +1251,31 @@ if __name__ == "__main__":
     apply_settings()
     overlay.after(50, apply_click_through)
 
+
+    # Safe overlay close handler
+    def on_overlay_close():
+        try:
+            save_settings()
+        except:
+            pass
+        try:
+            overlay.destroy()
+        except:
+            pass
+
+    # Hotkeys
+    overlay.bind("<Escape>", lambda _=None: on_overlay_close())
+    def toggle_settings():
+        global settings_win
+        if settings_win and tk.Toplevel.winfo_exists(settings_win):
+            settings_win.destroy()
+            settings_win = None
+        else:
+            open_settings()
+
+    keyboard.add_hotkey("f5", lambda: toggle_settings())
+
+
     # Drag logic so overlay can move unless locked
     def sd(e):
         if LOCK_POSITION:
@@ -1222,15 +1291,14 @@ if __name__ == "__main__":
             f"{overlay.winfo_y() + (e.y - overlay.y)}"
         )
 
-    # Bind dragging to labels - TODO: allow dragging whole window area maybe?
+    # Bind dragging to labels
     for wdg in (label_exp, label_avg, label_next, label_goal,
                 row_exp, row_avg, row_next, row_goal):
         wdg.bind("<ButtonPress-1>", sd)
         wdg.bind("<B1-Motion>", dr)
 
-    # Hotkeys
-    overlay.bind("<Escape>", lambda _=None: overlay.destroy())
-    keyboard.add_hotkey("f5", lambda: open_settings())
+    # Save position after drag ends
+    overlay.bind("<ButtonRelease-1>", lambda e: save_settings())
 
     # Background worker threads
     threading.Thread(target=lambda: asyncio.run(exp_loop()), daemon=True).start()
@@ -1241,4 +1309,10 @@ if __name__ == "__main__":
     blink_hunger_icon()
     update_clock()
 
+    # Register close handler BEFORE mainloop
+    overlay.protocol("WM_DELETE_WINDOW", on_overlay_close)
+
     tk.mainloop()
+
+    
+
