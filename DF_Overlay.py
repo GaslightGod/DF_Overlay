@@ -37,7 +37,7 @@ settings_win = None
 
 session = requests.Session()
 session.headers.update({"User-Agent": "Mozilla/5.0"})
-GITHUB_VERSION_PUSH = "1.76"
+GITHUB_VERSION_PUSH = "1.75"
 CURRENT_VERSION = "1.76"
 
 # Fetch patch notes
