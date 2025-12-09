@@ -37,8 +37,8 @@ settings_win = None
 
 session = requests.Session()
 session.headers.update({"User-Agent": "Mozilla/5.0"})
-GITHUB_VERSION_PUSH = "1.75"
-CURRENT_VERSION = "1.76"
+GITHUB_VERSION_PUSH = "1.76"
+CURRENT_VERSION = "1.77"
 
 # Fetch patch notes
 def fetch_patch_notes():
@@ -540,8 +540,18 @@ def open_settings():
     tk.Button(i, text="Open Debug Window", fg="black",
               bg=TEXT_COLOR, command=open_debug).pack(pady=10)
 
-    tk.Button(i, text="Update Now", fg="black",
-              bg=TEXT_COLOR, command=run_updater).pack(pady=5)
+   # tk.Button(i, text="Update Now", fg="black",
+    #          bg=TEXT_COLOR, command=run_updater).pack(pady=5)
+
+    tk.Button(
+        i,
+        text="Force Close Overlay",
+        fg="black",
+        bg=TEXT_COLOR,
+        font=("Consolas", 12, "bold"),
+        command=lambda: on_overlay_close()
+    ).pack(pady=5)
+
 
     def open_patch_notes():
         txt = fetch_patch_notes()
@@ -555,8 +565,44 @@ def open_settings():
         t.insert("end", txt)
         t.config(state="disabled")
 
+
+
+    def open_leaderboards():
+        w = tk.Toplevel(overlay)
+        w.title("Leaderboards")
+        w.config(bg="black")
+        w.geometry("600x600")
+
+        nb = ttk.Notebook(w)
+        nb.pack(fill="both", expand=True)
+
+        def make_tab(title, lines):
+            frame = tk.Frame(nb, bg="black")
+            text = tk.Text(frame, bg="black", fg=TEXT_COLOR, insertbackground=TEXT_COLOR)
+            text.pack(fill="both", expand=True)
+            for line in lines:
+                text.insert("end", line + "\n")
+            text.config(state="disabled")
+            nb.add(frame, text=title)
+
+        clan_data = fetch_dfprofiler_top25("https://www.dfprofiler.com/clan/weekly-ts")
+        make_tab("Clan Weekly TS", clan_data)
+
+        player_data = fetch_dfprofiler_top25("https://www.dfprofiler.com/player/weekly-ts")
+        make_tab("Player Weekly TS", player_data)
+
+
+
+
+
+
     tk.Button(i, text="View Patch Notes", fg="black",
               bg=TEXT_COLOR, command=open_patch_notes).pack(pady=5)
+    
+
+    tk.Button(i, text="View Leaderboards", fg="black", bg=TEXT_COLOR,
+          command=open_leaderboards).pack(pady=5)
+
 
     tk.Label(
         i, text=f"Version {CURRENT_VERSION}\n", fg=TEXT_COLOR,
@@ -670,8 +716,6 @@ def open_settings():
 
     close_btn.config(command=on_close)
     w.protocol("WM_DELETE_WINDOW", on_close)
-
-
 
     tk.Label(g, text="Switch PID:", fg=TEXT_COLOR,
             bg="black", font=("Consolas", 12, "bold")).pack(pady=(10, 3))
@@ -898,6 +942,56 @@ async def exp_loop():
         await asyncio.sleep(1)
 
         # Hunger icon blink cycle
+
+
+def fetch_dfprofiler_top25(url):
+    try:
+        r = session.get(url, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        table = soup.find("table")
+        if not table:
+            return ["Failed to parse leaderboard"]
+
+        # Only grab body rows (no header)
+        tbody = table.find("tbody") or table
+        rows = tbody.find_all("tr")[:25]
+
+        results = []
+
+        # Only special-case the player Weekly TS page
+        is_player_weekly_ts = "/player/weekly-ts" in url
+
+        for row in rows:
+            cols = [c.get_text(strip=True) for c in row.find_all("td")]
+            if not cols:
+                continue
+
+            if is_player_weekly_ts:
+                # columns: 0=details, 1=rank, 2=username, 3=level, 4=profession, 5=record
+                if len(cols) < 6:
+                    continue
+                rank = cols[1]
+                username = cols[2]
+                record = cols[5]
+                results.append(f"{rank}. {username} — {record}")
+            else:
+                # everything else (clan weekly, etc.) stays EXACTLY like before
+                results.append(" | ".join(cols))
+
+        return results
+
+    except Exception as e:
+        return [f"Error fetching leaderboard: {e}"]
+
+
+
+fetch_dfprofiler_top25("https://www.dfprofiler.com/clan/weekly-ts")
+fetch_dfprofiler_top25("https://www.dfprofiler.com/player/weekly-ts")
+
+
+
+
 def blink_hunger_icon():
     global blink_state, current_hunger_state
 
@@ -931,7 +1025,7 @@ def version_watchdog():
             outdated, latest, _, _ = check_latest_version()
             if outdated:
                 label_update_notice.config(
-                    text=f"New update available (v{latest}) - Press F5 to update"
+                    text=f"New update available (v{latest})"
                 )
             else:
                 ui_update(lambda: label_update_notice.config(text=""))
@@ -1108,60 +1202,6 @@ if __name__ == "__main__":
         except:
             pass
 
-    # Version check popup before loading overlay
-    is_outdated, latest, dl_url, msg = check_latest_version()
-    if is_outdated:
-        upd = tk.Tk()
-        upd.title("Update Available")
-        upd.config(bg="black")
-        upd.geometry("360x230")
-        upd.resizable(False, False)
-
-        tk.Label(upd, text="A new version is available!",
-                 fg="#0BF0F0", bg="black",
-                 font=("Consolas", 14, "bold")).pack(pady=(15, 5))
-
-        tk.Label(
-            upd,
-            text=f"Current Version: {CURRENT_VERSION}\nLatest Version: {latest}",
-            fg="#0BF0F0", bg="black", font=("Consolas", 12)
-        ).pack(pady=5)
-
-        tk.Label(
-            upd, text=msg, fg="#0BF0F0", bg="black",
-            font=("Consolas", 10), wraplength=320, justify="center"
-        ).pack(pady=10)
-
-        def do_update():
-            try:
-                install_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-                updater_path = os.path.join(install_dir, "updater.exe")
-                if not os.path.exists(updater_path):
-                    messagebox.showerror("Updater Missing", "updater.exe not found!")
-                    return
-                subprocess.Popen([updater_path, dl_url])
-                sys.exit(0)
-            except Exception as e:
-                messagebox.showerror("Error", f"Update failed:\n{e}")
-
-        def skip_update():
-            upd.destroy()
-
-        tk.Button(
-            upd, text="Update Now", fg="black", bg="#0BF0F0",
-            font=("Consolas", 12, "bold"), padx=10, pady=4,
-            command=do_update
-        ).pack(pady=(5, 3))
-
-        tk.Button(
-            upd, text="Continue Without Updating",
-            fg="black", bg="#0BF0F0",
-            font=("Consolas", 11),
-            padx=10, pady=3,
-            command=skip_update
-        ).pack(pady=(0, 10))
-
-        upd.mainloop()
 
     # Load initial values so overlay has starting point
     init = fetch_profile(PID, fetch_level=True)
@@ -1274,6 +1314,8 @@ if __name__ == "__main__":
             open_settings()
 
     keyboard.add_hotkey("f5", lambda: toggle_settings())
+    keyboard.add_hotkey("ctrl+f5", lambda: on_overlay_close())
+
 
 
     # Drag logic so overlay can move unless locked
