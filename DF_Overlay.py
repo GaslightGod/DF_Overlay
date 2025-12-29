@@ -37,8 +37,8 @@ settings_win = None
 
 session = requests.Session()
 session.headers.update({"User-Agent": "Mozilla/5.0"})
-GITHUB_VERSION_PUSH = "1.77"
-CURRENT_VERSION = "1.77"
+GITHUB_VERSION_PUSH = "1.78"
+CURRENT_VERSION = "1.78"
 
 # Fetch patch notes
 def fetch_patch_notes():
@@ -386,6 +386,28 @@ def switch_pid(new_pid):
     messagebox.showinfo("PID Updated", f"Tracking switched to PID {PID}")
 
 
+
+
+
+def reset_exp_tracking():
+    global last_exp, last_change_time, NEXT_SECONDS, GOAL_SECONDS
+
+    with exp_lock:
+        exp_history.clear()
+        exp_window.clear()
+
+    last_exp = EXP_INSIDE
+    last_change_time = time.time()
+
+    NEXT_SECONDS = 0
+    GOAL_SECONDS = 0
+
+    ui_update(lambda: label_exp.config(text="EXP/hr: WAITING"))
+    ui_update(lambda: label_avg.config(text="AVG: WAITING"))
+    ui_update(lambda: label_next.config(text="Next LV: --:--:--"))
+    ui_update(lambda: label_goal.config(text=f"Goal {GOAL_LEVEL}: --:--:--"))
+
+
 # Settings window - pretty huge but works for now
 def open_settings():
     global settings_win
@@ -551,6 +573,17 @@ def open_settings():
         font=("Consolas", 12, "bold"),
         command=lambda: on_overlay_close()
     ).pack(pady=5)
+
+
+    tk.Button(
+        i,
+        text="Reset values",
+        fg="black",
+        bg=TEXT_COLOR,
+        font=("Consolas", 12, "bold"),
+        command=reset_exp_tracking
+    ).pack(pady=5)
+
 
 
     def open_patch_notes():
@@ -1315,6 +1348,8 @@ if __name__ == "__main__":
 
     keyboard.add_hotkey("f5", lambda: toggle_settings())
     keyboard.add_hotkey("ctrl+f5", lambda: on_overlay_close())
+    keyboard.add_hotkey("ctrl+shift+r", lambda: reset_exp_tracking())
+
 
 
 

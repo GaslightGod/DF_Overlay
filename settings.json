@@ -1,9 +1,9 @@
 {
-    "TEXT_COLOR": "#e859e8",
+    "TEXT_COLOR": "#4ff2f2",
     "SCALE": 0.9,
     "GOAL_LEVEL": 415,
     "FONT_FAMILY": "Consolas",
-    "LOCK_POSITION": false,
+    "LOCK_POSITION": true,
     "SHOW_EXP": true,
     "SHOW_AVG": true,
     "SHOW_NEXT": true,
@@ -11,6 +11,6 @@
     "SHOW_CLOCK": true,
     "EXP_MODE": "AVG5",
     "ICON_SCALE": 1.0,
-    "OVERLAY_X": 854,
-    "OVERLAY_Y": 1021
+    "OVERLAY_X": 9,
+    "OVERLAY_Y": 137
 }
